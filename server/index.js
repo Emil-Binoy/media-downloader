@@ -2,9 +2,39 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const ytdlp = require('yt-dlp-exec');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const ffmpegPath = require('ffmpeg-static');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Set up temporary directory
+const tempDir = path.join(__dirname, 'temp');
+if (!fs.existsSync(tempDir)) {
+  fs.mkdirSync(tempDir, { recursive: true });
+}
+
+// Cleanup old files in temp directory every hour (files older than 1 hour)
+setInterval(() => {
+  fs.readdir(tempDir, (err, files) => {
+    if (err) return console.error('Error reading temp directory:', err);
+    
+    const now = Date.now();
+    files.forEach(file => {
+      const filePath = path.join(tempDir, file);
+      fs.stat(filePath, (err, stats) => {
+        if (err) return;
+        if (now - stats.mtimeMs > 3600000) {
+          fs.unlink(filePath, err => {
+            if (err) console.error(`Error deleting old file ${filePath}:`, err);
+          });
+        }
+      });
+    });
+  });
+}, 3600000);
 
 app.use(cors({ exposedHeaders: ['Content-Disposition'] }));
 app.use(express.json());
@@ -42,6 +72,9 @@ app.post('/api/download', async (req, res) => {
   const { url, type, quality } = req.body;
   if (!url || !type) return res.status(400).json({ error: 'URL and type are required' });
   
+  const tempId = crypto.randomBytes(16).toString('hex');
+  let tempFilePath = '';
+  
   try {
     const titleInfo = await ytdlp(url, { dumpJson: true });
     const safeTitle = (titleInfo.title || 'media_download').replace(/[^a-z0-9]/gi, '_');
@@ -49,6 +82,7 @@ app.post('/api/download', async (req, res) => {
     let options = {
       noCheckCertificate: true,
       noWarnings: true,
+      ffmpegLocation: ffmpegPath,
     };
     
     let extension = 'mp4';
@@ -68,39 +102,70 @@ app.post('/api/download', async (req, res) => {
     } else if (type === 'video') {
       extension = 'mp4';
       if (quality === '360') {
-        options.format = 'bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]';
+        options.format = 'bestvideo[vcodec^=avc][height<=360]+bestaudio[acodec^=mp4a]/bestvideo[height<=360]+bestaudio/best[height<=360]';
       } else if (quality === '720') {
-        options.format = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]';
+        options.format = 'bestvideo[vcodec^=avc][height<=720]+bestaudio[acodec^=mp4a]/bestvideo[height<=720]+bestaudio/best[height<=720]';
       } else if (quality === '1080') {
-        options.format = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]';
+        options.format = 'bestvideo[vcodec^=avc][height<=1080]+bestaudio[acodec^=mp4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]';
       } else {
-        options.format = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
+        options.format = 'bestvideo[vcodec^=avc]+bestaudio[acodec^=mp4a]/bestvideo+bestaudio/best';
       }
       options.mergeOutputFormat = 'mp4';
     } else {
       return res.status(400).json({ error: 'Invalid media type' });
     }
     
-    res.header('Content-Disposition', `attachment; filename="${safeTitle}.${extension}"`);
-    res.header('Content-Type', type === 'audio' ? 'audio/mpeg' : 'video/mp4');
+    // Fetch info with the selected format to check what will actually be downloaded
+    const infoOptions = { ...options, dumpJson: true };
+    const mediaInfo = await ytdlp(url, infoOptions);
     
-    // For direct streaming, pipe the output
-    // Note: yt-dlp needs stdout for data when `-o -` is used
-    options.output = '-'; 
+    // If video, check if we need to fallback and re-encode
+    if (type === 'video') {
+      let needsRecode = false;
+      if (mediaInfo.requested_formats) {
+        const vFormat = mediaInfo.requested_formats.find(f => f.vcodec !== 'none');
+        const aFormat = mediaInfo.requested_formats.find(f => f.acodec !== 'none');
+        
+        if (vFormat && vFormat.vcodec && !vFormat.vcodec.startsWith('avc')) needsRecode = true;
+        if (aFormat && aFormat.acodec && !aFormat.acodec.startsWith('mp4a')) needsRecode = true;
+      } else {
+        if (mediaInfo.vcodec && mediaInfo.vcodec !== 'none' && !mediaInfo.vcodec.startsWith('avc')) needsRecode = true;
+        if (mediaInfo.acodec && mediaInfo.acodec !== 'none' && !mediaInfo.acodec.startsWith('mp4a')) needsRecode = true;
+      }
+
+      if (needsRecode) {
+        options.postprocessorArgs = ['ffmpeg:-c:v libx264 -c:a aac'];
+      }
+    }
     
-    const stream = ytdlp.exec(url, options, { stdio: ['ignore', 'pipe', 'ignore'] });
+    tempFilePath = path.join(tempDir, `${tempId}.${extension}`);
+    options.output = tempFilePath;
     
-    stream.stdout.pipe(res);
+    await ytdlp(url, options);
     
-    stream.on('error', (err) => {
-      console.error('Stream error:', err);
-      if (!res.headersSent) res.status(500).json({ error: 'Download failed' });
+    if (!fs.existsSync(tempFilePath)) {
+      throw new Error('Downloaded file not found');
+    }
+    
+    await new Promise((resolve, reject) => {
+      res.download(tempFilePath, `${safeTitle}.${extension}`, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
     });
 
   } catch (error) {
     console.error('Download error:', error.message);
     if (!res.headersSent) {
-      res.status(500).json({ error: 'Failed to initialize download' });
+      res.status(500).json({ error: 'Failed to download media' });
+    }
+  } finally {
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        fs.unlinkSync(tempFilePath);
+      } catch (e) {
+        console.error('Error deleting temp file in finally block:', e);
+      }
     }
   }
 });
