@@ -1,10 +1,17 @@
-import { useState } from 'react';
+import { useState, forwardRef, useImperativeHandle, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Search, Loader2 } from 'lucide-react';
 
-const UrlInput = ({ onFetchInfo, isLoading }) => {
+const UrlInput = forwardRef(({ onFetchInfo, isLoading }, ref) => {
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
+  const inputRef = useRef(null);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      inputRef.current?.focus();
+    }
+  }));
 
   const validateUrl = (string) => {
     try {
@@ -37,7 +44,8 @@ const UrlInput = ({ onFetchInfo, isLoading }) => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.3 }}
-      className="w-full max-w-3xl mx-auto mt-8"
+      className="w-full max-w-3xl mx-auto mt-4"
+      id="url-input"
     >
       <form onSubmit={handleSubmit} className="relative group">
         <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all opacity-50"></div>
@@ -46,6 +54,7 @@ const UrlInput = ({ onFetchInfo, isLoading }) => {
             <Search size={24} />
           </div>
           <input
+            ref={inputRef}
             type="text"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
@@ -80,6 +89,8 @@ const UrlInput = ({ onFetchInfo, isLoading }) => {
       )}
     </motion.div>
   );
-};
+});
+
+UrlInput.displayName = 'UrlInput';
 
 export default UrlInput;
