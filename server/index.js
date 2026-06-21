@@ -26,6 +26,15 @@ if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir, { recursive: true });
 }
 
+// Set up cookies for YouTube bot bypass
+const cookiesPath = path.join(__dirname, 'cookies.txt');
+if (process.env.YOUTUBE_COOKIES) {
+  // Replace literal '\n' with actual newlines in case the platform escapes them
+  const cookiesContent = process.env.YOUTUBE_COOKIES.replace(/\\n/g, '\n');
+  fs.writeFileSync(cookiesPath, cookiesContent);
+  console.log('Loaded YouTube cookies from environment variable');
+}
+
 // Cleanup old files in temp directory every hour (files older than 1 hour)
 setInterval(() => {
   fs.readdir(tempDir, (err, files) => {
@@ -55,13 +64,16 @@ app.get('/api/media-info', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'URL is required' });
 
   try {
-    const info = await ytdlp(url, {
+    const options = {
       dumpJson: true,
       noWarnings: true,
       noCheckCertificate: true,
       forceIpv4: true,
       extractorArgs: 'youtube:player_client=ios,android'
-    });
+    };
+    if (fs.existsSync(cookiesPath)) options.cookies = cookiesPath;
+
+    const info = await ytdlp(url, options);
     
     const { title, thumbnail, extractor, uploader, duration } = info;
     
@@ -97,6 +109,7 @@ app.post('/api/download', async (req, res) => {
       forceIpv4: true,
       extractorArgs: 'youtube:player_client=ios,android'
     };
+    if (fs.existsSync(cookiesPath)) options.cookies = cookiesPath;
     
     let extension = 'mp4';
 
