@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Play, Download, Clock, User, Film, Music, CheckCircle2, Loader2, Link as LinkIcon, Image as ImageIcon } from 'lucide-react';
 import ProgressBar from './ProgressBar';
 import socket from '../services/socket';
-
+import { API_URL } from '../services/api';
 const formatDuration = (seconds) => {
   if (!seconds) return 'Unknown';
   const h = Math.floor(seconds / 3600);
@@ -103,7 +103,7 @@ const MediaPreview = ({ mediaInfo, onDownload }) => {
         {/* Media Thumbnail Area */}
         <div className="md:w-2/5 relative">
           <img 
-            src={thumbnail || 'https://via.placeholder.com/640x360.png?text=No+Thumbnail'} 
+            src={thumbnail ? `${API_URL}/proxy-image?url=${encodeURIComponent(thumbnail)}` : 'https://via.placeholder.com/640x360.png?text=No+Thumbnail'} 
             alt={title} 
             className="w-full h-full object-cover min-h-[180px] sm:min-h-[240px] md:min-h-full"
           />

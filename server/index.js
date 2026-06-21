@@ -77,6 +77,31 @@ app.get('/api/media-info', async (req, res) => {
   }
 });
 
+// GET /api/proxy-image
+app.get('/api/proxy-image', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: 'URL is required' });
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+    const buffer = await response.arrayBuffer();
+    
+    res.set('Content-Type', response.headers.get('content-type') || 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.send(Buffer.from(buffer));
+  } catch (error) {
+    console.error('Error proxying image:', error.message);
+    res.status(500).json({ error: 'Failed to fetch image' });
+  }
+});
+
 // POST /api/download
 app.post('/api/download', async (req, res) => {
   const { url, type, quality, clientId, downloadId } = req.body;

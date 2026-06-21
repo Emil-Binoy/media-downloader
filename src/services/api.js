@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const rawUrl = import.meta.env.VITE_API_URL?.replace(/\/+$/, '') || 'http://localhost:8000/api';
-const API_URL = rawUrl.endsWith('/api') ? rawUrl : `${rawUrl}/api`;
+export const API_URL = rawUrl.endsWith('/api') ? rawUrl : `${rawUrl}/api`;
 
 export const getMediaInfo = async (url) => {
   try {
