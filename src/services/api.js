@@ -28,7 +28,10 @@ export const downloadMedia = async (url, type, quality, clientId, downloadId) =>
     });
     
     // Extract filename from content-disposition header if available
-    let filename = type === 'audio' ? 'download.mp3' : 'download.mp4';
+    let filename = 'download.mp4';
+    if (type === 'audio') filename = 'download.mp3';
+    else if (type === 'image') filename = 'download.jpg';
+
     const contentDisposition = response.headers['content-disposition'];
     if (contentDisposition) {
       const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);

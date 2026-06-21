@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const ffmpegPath = require('ffmpeg-static');
 const http = require('http');
 const { Server } = require('socket.io');
+const { instagramGetUrl } = require('instagram-url-direct');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -73,9 +74,27 @@ app.get('/api/media-info', async (req, res) => {
     };
     if (fs.existsSync(cookiesPath)) options.cookies = cookiesPath;
 
-    const info = await ytdlp(url, options);
-    
-    const { title, thumbnail, extractor, uploader, duration } = info;
+    let title, thumbnail, extractor, uploader, duration;
+
+    try {
+      const info = await ytdlp(url, options);
+      ({ title, thumbnail, extractor, uploader, duration } = info);
+    } catch (ytdlpError) {
+      if (url.includes('instagram.com')) {
+        const igData = await instagramGetUrl(url);
+        if (igData && igData.url_list && igData.url_list.length > 0) {
+          title = igData.post_info?.caption ? igData.post_info.caption.substring(0, 50) : 'Instagram Post';
+          thumbnail = igData.url_list[0];
+          extractor = 'instagram';
+          uploader = igData.post_info?.owner_username || 'Instagram User';
+          duration = null;
+        } else {
+          throw ytdlpError;
+        }
+      } else {
+        throw ytdlpError;
+      }
+    }
     
     res.json({
       title,
@@ -124,7 +143,27 @@ app.post('/api/download', async (req, res) => {
   let tempFilePath = '';
   
   try {
-    const titleInfo = await ytdlp(url, { dumpJson: true });
+    let titleInfo = {};
+    
+    try {
+      titleInfo = await ytdlp(url, { dumpJson: true });
+    } catch (err) {
+      if (url.includes('instagram.com')) {
+        const igData = await instagramGetUrl(url);
+        if (igData && igData.url_list && igData.url_list.length > 0) {
+          titleInfo = {
+            title: igData.post_info?.caption ? igData.post_info.caption.substring(0, 50) : 'Instagram Post',
+            thumbnail: igData.url_list[0],
+            url: igData.url_list[0]
+          };
+        } else {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
+    
     const safeTitle = (titleInfo.title || 'media_download').replace(/[^a-z0-9]/gi, '_');
     
     let options = {
@@ -152,7 +191,9 @@ app.post('/api/download', async (req, res) => {
       }
     } else if (type === 'video') {
       extension = 'mp4';
-      if (quality === '360') {
+      if (url.includes('instagram.com')) {
+        options.format = 'best';
+      } else if (quality === '360') {
         options.format = 'bestvideo[vcodec^=avc][height<=360]+bestaudio[acodec^=mp4a]/bestvideo[height<=360]+bestaudio/best[height<=360]';
       } else if (quality === '720') {
         options.format = 'bestvideo[vcodec^=avc][height<=720]+bestaudio[acodec^=mp4a]/bestvideo[height<=720]+bestaudio/best[height<=720]';
@@ -162,6 +203,46 @@ app.post('/api/download', async (req, res) => {
         options.format = 'bestvideo[vcodec^=avc]+bestaudio[acodec^=mp4a]/bestvideo+bestaudio/best';
       }
       options.mergeOutputFormat = 'mp4';
+    } else if (type === 'image') {
+      extension = 'jpg';
+      const imageUrl = titleInfo.thumbnail || titleInfo.url;
+      if (!imageUrl) throw new Error('Could not find image URL');
+      
+      tempFilePath = path.join(tempDir, `${tempId}.${extension}`);
+      
+      const emitProgress = (data) => {
+        if (clientId && downloadId) {
+          io.to(clientId).emit('progress', { downloadId, ...data });
+        }
+      };
+      
+      emitProgress({ stage: 'Downloading image', percentage: 50 });
+      
+      const response = await fetch(imageUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
+      
+      if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
+      
+      const buffer = await response.arrayBuffer();
+      fs.writeFileSync(tempFilePath, Buffer.from(buffer));
+      
+      emitProgress({ stage: 'Finalizing', percentage: 100 });
+      
+      if (clientId && downloadId) {
+        io.to(clientId).emit('completed', { downloadId });
+      }
+
+      await new Promise((resolve, reject) => {
+        res.download(tempFilePath, `${safeTitle}.${extension}`, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      
+      return; // Early return for image downloads
     } else {
       return res.status(400).json({ error: 'Invalid media type' });
     }
