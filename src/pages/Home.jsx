@@ -9,7 +9,6 @@ import { motion } from 'framer-motion';
 const Home = () => {
   const [mediaInfo, setMediaInfo] = useState(null);
   const [isLoadingInfo, setIsLoadingInfo] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState('');
   const [currentUrl, setCurrentUrl] = useState('');
 
@@ -29,16 +28,13 @@ const Home = () => {
     }
   };
 
-  const handleDownload = async (type, quality) => {
-    setIsDownloading(true);
+  const handleDownload = async (type, quality, clientId, downloadId) => {
     setError('');
     try {
-      await downloadMedia(currentUrl, type, quality);
+      await downloadMedia(currentUrl, type, quality, clientId, downloadId);
     } catch (err) {
       setError(typeof err === 'string' ? err : 'Failed to download media.');
       throw err; // Re-throw for the component to handle UI states
-    } finally {
-      setIsDownloading(false);
     }
   };
 
@@ -62,7 +58,6 @@ const Home = () => {
         <MediaPreview 
           mediaInfo={mediaInfo} 
           onDownload={handleDownload} 
-          isDownloading={isDownloading} 
         />
       )}
     </div>

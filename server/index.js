@@ -6,9 +6,19 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const ffmpegPath = require('ffmpeg-static');
+const http = require('http');
+const { Server } = require('socket.io');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
 
 // Set up temporary directory
 const tempDir = path.join(__dirname, 'temp');
@@ -69,7 +79,7 @@ app.get('/api/media-info', async (req, res) => {
 
 // POST /api/download
 app.post('/api/download', async (req, res) => {
-  const { url, type, quality } = req.body;
+  const { url, type, quality, clientId, downloadId } = req.body;
   if (!url || !type) return res.status(400).json({ error: 'URL and type are required' });
   
   const tempId = crypto.randomBytes(16).toString('hex');
@@ -141,8 +151,60 @@ app.post('/api/download', async (req, res) => {
     tempFilePath = path.join(tempDir, `${tempId}.${extension}`);
     options.output = tempFilePath;
     
-    await ytdlp(url, options);
+    const ytDlpProcess = ytdlp.exec(url, options);
     
+    let currentStage = 'Fetching metadata';
+    const emitProgress = (data) => {
+      if (clientId && downloadId) {
+        io.to(clientId).emit('progress', { downloadId, ...data });
+      }
+    };
+
+    ytDlpProcess.stdout.on('data', (data) => {
+      const output = data.toString();
+      
+      if (output.includes('[youtube]') || output.includes('[info]')) {
+        currentStage = 'Fetching metadata';
+      } else if (output.includes('[download] Destination:')) {
+        if (output.includes('.m4a') || output.includes('.webm') || output.includes('.mp3')) {
+          currentStage = 'Downloading audio';
+        } else {
+          currentStage = 'Downloading video';
+        }
+      } else if (output.includes('[Merger]')) {
+        currentStage = 'Merging streams';
+      } else if (output.includes('[ExtractAudio]')) {
+        currentStage = 'Extracting audio';
+      } else if (output.includes('[FixupM4a]')) {
+        currentStage = 'Finalizing';
+      }
+
+      // Match progress output: [download]  45.5% of 10.50MiB at 1.25MiB/s ETA 00:04
+      const progressMatch = output.match(/\[download\]\s+(?<percent>[\d.]+)%\s+of\s+(~?)(?<size>[\d.]+[KMG]?iB)(?:\s+at\s+(?<speed>[\d.]+[KMG]?iB\/s))?(?:\s+ETA\s+(?<eta>[\d:]+))?/);
+      
+      if (progressMatch && progressMatch.groups) {
+        emitProgress({
+          percentage: parseFloat(progressMatch.groups.percent),
+          size: progressMatch.groups.size,
+          speed: progressMatch.groups.speed || 'Unknown',
+          eta: progressMatch.groups.eta || 'Unknown',
+          stage: currentStage
+        });
+      } else {
+        emitProgress({ stage: currentStage });
+      }
+    });
+
+    ytDlpProcess.on('error', (err) => {
+      console.error('yt-dlp error:', err);
+    });
+
+    await ytDlpProcess;
+    
+    if (clientId && downloadId) {
+      io.to(clientId).emit('completed', { downloadId });
+    }
+
     if (!fs.existsSync(tempFilePath)) {
       throw new Error('Downloaded file not found');
     }
@@ -156,6 +218,9 @@ app.post('/api/download', async (req, res) => {
 
   } catch (error) {
     console.error('Download error:', error.message);
+    if (clientId && downloadId) {
+      io.to(clientId).emit('error', { downloadId, message: 'Failed to download media' });
+    }
     if (!res.headersSent) {
       res.status(500).json({ error: 'Failed to download media' });
     }
@@ -170,6 +235,6 @@ app.post('/api/download', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

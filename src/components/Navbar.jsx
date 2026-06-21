@@ -22,7 +22,7 @@ const Navbar = () => {
               <DownloadCloud size={20} className="text-white" />
             </div>
             <span className="font-bold text-xl tracking-tight text-white">
-              Univ<span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">DL</span>
+              Univ<span className="text-transparent bg-clip-text bg-linear-to-r from-purple-400 to-blue-400">DL</span>
             </span>
           </div>
 
@@ -60,8 +60,8 @@ const Navbar = () => {
 
       {/* Mobile Menu */}
       {isOpen && (
-        <div className="md:hidden bg-dark-glass border-b border-white/10 backdrop-blur-xl absolute w-full">
-          <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+        <div className="md:hidden bg-dark/95 border-b border-white/10 backdrop-blur-sm absolute left-0 w-full shadow-2xl shadow-black/50">
+          <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 p-4">
             {navLinks.map((link) => (
               <Link
                 key={link.name}

@@ -13,13 +13,15 @@ export const getMediaInfo = async (url) => {
   }
 };
 
-export const downloadMedia = async (url, type, quality) => {
+export const downloadMedia = async (url, type, quality, clientId, downloadId) => {
   try {
     // For downloads, we need to handle blob response
     const response = await axios.post(`${API_URL}/download`, {
       url,
       type,
-      quality
+      quality,
+      clientId,
+      downloadId
     }, {
       responseType: 'blob'
     });
