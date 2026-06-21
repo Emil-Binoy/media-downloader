@@ -58,8 +58,9 @@ app.get('/api/media-info', async (req, res) => {
     const info = await ytdlp(url, {
       dumpJson: true,
       noWarnings: true,
-      noCallHome: true,
       noCheckCertificate: true,
+      forceIpv4: true,
+      extractorArgs: 'youtube:player_client=ios,android'
     });
     
     const { title, thumbnail, extractor, uploader, duration } = info;
@@ -93,6 +94,8 @@ app.post('/api/download', async (req, res) => {
       noCheckCertificate: true,
       noWarnings: true,
       ffmpegLocation: ffmpegPath,
+      forceIpv4: true,
+      extractorArgs: 'youtube:player_client=ios,android'
     };
     
     let extension = 'mp4';
