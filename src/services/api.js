@@ -14,7 +14,7 @@ export const getMediaInfo = async (url) => {
   }
 };
 
-export const downloadMedia = async (url, type, quality, clientId, downloadId) => {
+export const downloadMedia = async (url, type, quality, clientId, downloadId, mediaIndex) => {
   try {
     // For downloads, we need to handle blob response
     const response = await axios.post(`${API_URL}/download`, {
@@ -22,7 +22,8 @@ export const downloadMedia = async (url, type, quality, clientId, downloadId) =>
       type,
       quality,
       clientId,
-      downloadId
+      downloadId,
+      mediaIndex
     }, {
       responseType: 'blob'
     });

@@ -32,10 +32,10 @@ const Home = () => {
     }
   };
 
-  const handleDownload = async (type, quality, clientId, downloadId) => {
+  const handleDownload = async (type, quality, clientId, downloadId, mediaIndex) => {
     setError('');
     try {
-      await downloadMedia(currentUrl, type, quality, clientId, downloadId);
+      await downloadMedia(currentUrl, type, quality, clientId, downloadId, mediaIndex);
     } catch (err) {
       setError(typeof err === 'string' ? err : 'Failed to download media.');
       throw err; // Re-throw for the component to handle UI states

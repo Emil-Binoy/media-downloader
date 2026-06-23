@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
-import { Play, Download, Clock, User, Film, Music, CheckCircle2, Loader2, Link as LinkIcon, Image as ImageIcon } from 'lucide-react';
+import { Play, Download, Clock, User, Film, Music, CheckCircle2, Loader2, Link as LinkIcon, Image as ImageIcon, Layers } from 'lucide-react';
 import ProgressBar from './ProgressBar';
 import socket from '../services/socket';
 import { API_URL } from '../services/api';
@@ -59,9 +59,15 @@ const MediaPreview = ({ mediaInfo, onDownload }) => {
 
   if (!mediaInfo) return null;
 
-  const { title, thumbnail, platform, creator, duration } = mediaInfo;
+  const { title, thumbnail, platform, creator, duration, carousel } = mediaInfo;
 
-  const handleDownloadClick = async (type, quality) => {
+  useEffect(() => {
+    if (carousel && carousel.length > 1) {
+      setActiveTab('carousel');
+    }
+  }, [carousel]);
+
+  const handleDownloadClick = async (type, quality, mediaIndex) => {
     const downloadId = Math.random().toString(36).substring(2, 15);
     const clientId = socket.id;
     
@@ -71,7 +77,7 @@ const MediaPreview = ({ mediaInfo, onDownload }) => {
     }));
 
     try {
-      await onDownload(type, quality, clientId, downloadId);
+      await onDownload(type, quality, clientId, downloadId, mediaIndex);
     } catch (error) {
       console.error(error);
       setActiveDownloads(prev => ({
@@ -137,6 +143,14 @@ const MediaPreview = ({ mediaInfo, onDownload }) => {
 
           {/* Download Tabs */}
           <div className="flex gap-1 sm:gap-2 mb-4 sm:mb-6 bg-white/5 p-1 rounded-xl">
+            {carousel && carousel.length > 1 && (
+              <button 
+                onClick={() => setActiveTab('carousel')}
+                className={`flex-1 flex items-center justify-center gap-1 sm:gap-2 py-1.5 sm:py-2 px-1 rounded-lg text-xs sm:text-sm font-medium transition-colors ${activeTab === 'carousel' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'}`}
+              >
+                <Layers size={14} className="sm:w-4 sm:h-4" /> <span className="hidden xs:inline sm:inline">Carousel</span>
+              </button>
+            )}
             <button 
               onClick={() => setActiveTab('video')}
               className={`flex-1 flex items-center justify-center gap-1 sm:gap-2 py-1.5 sm:py-2 px-1 rounded-lg text-xs sm:text-sm font-medium transition-colors ${activeTab === 'video' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'}`}
@@ -159,6 +173,51 @@ const MediaPreview = ({ mediaInfo, onDownload }) => {
 
           {/* Download Options */}
           <div className="flex-grow space-y-3">
+            {activeTab === 'carousel' && carousel && (
+              <div className="space-y-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-white font-medium">{carousel.length} Items Available</span>
+                  <button 
+                    onClick={async () => {
+                      for (let i = 0; i < carousel.length; i++) {
+                        handleDownloadClick(carousel[i].type, 'best', i);
+                        await new Promise(r => setTimeout(r, 800));
+                      }
+                    }}
+                    className="px-4 py-1.5 bg-primary/20 hover:bg-primary/40 text-primary rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                  >
+                    <Download size={14} /> Download All
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+                  {carousel.map((item, index) => (
+                    <div key={index} className="relative group rounded-xl overflow-hidden bg-white/5 border border-white/10 aspect-square">
+                      {item.type === 'video' && (
+                        <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                          <Film size={24} className="text-white drop-shadow-md" />
+                        </div>
+                      )}
+                      <img 
+                        src={`${API_URL}/proxy-image?url=${encodeURIComponent(item.thumbnail || item.url)}`} 
+                        alt={`Carousel item ${index + 1}`} 
+                        className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" 
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-dark/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                      <button 
+                        onClick={() => handleDownloadClick(item.type, 'best', index)}
+                        className="absolute bottom-2 right-2 p-2 bg-primary text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0 z-20 shadow-lg"
+                        title="Download this item"
+                      >
+                        <Download size={16} />
+                      </button>
+                      <div className="absolute top-2 left-2 px-2 py-1 bg-dark/60 backdrop-blur-sm text-white text-[10px] font-medium rounded-md z-20">
+                        {index + 1}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {activeTab === 'video' && videoOptions.map((opt) => (
               <button 
                 key={opt.quality}

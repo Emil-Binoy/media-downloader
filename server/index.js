@@ -74,26 +74,40 @@ app.get('/api/media-info', async (req, res) => {
     };
     if (fs.existsSync(cookiesPath)) options.cookies = cookiesPath;
 
-    let title, thumbnail, extractor, uploader, duration;
+    let title, thumbnail, extractor, uploader, duration, carousel;
 
     try {
-      const info = await ytdlp(url, options);
-      ({ title, thumbnail, extractor, uploader, duration } = info);
-    } catch (ytdlpError) {
       if (url.includes('instagram.com')) {
         const igData = await instagramGetUrl(url);
         if (igData && igData.url_list && igData.url_list.length > 0) {
           title = igData.post_info?.caption ? igData.post_info.caption.substring(0, 50) : 'Instagram Post';
-          thumbnail = igData.url_list[0];
+          
+          const firstMedia = igData.media_details && igData.media_details[0];
+          thumbnail = firstMedia ? (firstMedia.thumbnail || firstMedia.url) : igData.url_list[0];
+          
           extractor = 'instagram';
           uploader = igData.post_info?.owner_username || 'Instagram User';
           duration = null;
+          
+          if (igData.url_list.length > 1) {
+            carousel = igData.url_list.map((u, index) => {
+              const details = igData.media_details && igData.media_details[index];
+              return {
+                url: u,
+                type: u.includes('.mp4') ? 'video' : 'image',
+                thumbnail: details ? (details.thumbnail || details.url) : u
+              };
+            });
+          }
         } else {
-          throw ytdlpError;
+          throw new Error('Failed to extract Instagram data');
         }
       } else {
-        throw ytdlpError;
+        const info = await ytdlp(url, options);
+        ({ title, thumbnail, extractor, uploader, duration } = info);
       }
+    } catch (error) {
+      throw error;
     }
     
     res.json({
@@ -102,6 +116,7 @@ app.get('/api/media-info', async (req, res) => {
       platform: extractor,
       creator: uploader,
       duration,
+      carousel,
     });
   } catch (error) {
     console.error('Error fetching media info:', error.message);
@@ -136,7 +151,7 @@ app.get('/api/proxy-image', async (req, res) => {
 
 // POST /api/download
 app.post('/api/download', async (req, res) => {
-  const { url, type, quality, clientId, downloadId } = req.body;
+  const { url, type, quality, clientId, downloadId, mediaIndex } = req.body;
   if (!url || !type) return res.status(400).json({ error: 'URL and type are required' });
   
   const tempId = crypto.randomBytes(16).toString('hex');
@@ -146,22 +161,26 @@ app.post('/api/download', async (req, res) => {
     let titleInfo = {};
     
     try {
-      titleInfo = await ytdlp(url, { dumpJson: true });
-    } catch (err) {
       if (url.includes('instagram.com')) {
         const igData = await instagramGetUrl(url);
         if (igData && igData.url_list && igData.url_list.length > 0) {
+          const mIndex = mediaIndex !== undefined ? parseInt(mediaIndex) : 0;
+          const targetUrl = igData.url_list[mIndex] || igData.url_list[0];
+          const mediaDetail = igData.media_details && igData.media_details[mIndex];
+          const targetThumbnail = mediaDetail ? (mediaDetail.thumbnail || mediaDetail.url) : targetUrl;
           titleInfo = {
             title: igData.post_info?.caption ? igData.post_info.caption.substring(0, 50) : 'Instagram Post',
-            thumbnail: igData.url_list[0],
-            url: igData.url_list[0]
+            thumbnail: targetThumbnail,
+            url: targetUrl
           };
         } else {
-          throw err;
+          throw new Error('Failed to extract Instagram data');
         }
       } else {
-        throw err;
+        titleInfo = await ytdlp(url, { dumpJson: true });
       }
+    } catch (err) {
+      throw err;
     }
     
     const safeTitle = (titleInfo.title || 'media_download').replace(/[^a-z0-9]/gi, '_');
@@ -247,9 +266,11 @@ app.post('/api/download', async (req, res) => {
       return res.status(400).json({ error: 'Invalid media type' });
     }
     
+    const execUrl = url.includes('instagram.com') && titleInfo.url ? titleInfo.url : url;
+
     // Fetch info with the selected format to check what will actually be downloaded
     const infoOptions = { ...options, dumpJson: true };
-    const mediaInfo = await ytdlp(url, infoOptions);
+    const mediaInfo = await ytdlp(execUrl, infoOptions);
     
     // If video, check if we need to fallback and re-encode
     if (type === 'video') {
@@ -273,7 +294,7 @@ app.post('/api/download', async (req, res) => {
     tempFilePath = path.join(tempDir, `${tempId}.${extension}`);
     options.output = tempFilePath;
     
-    const ytDlpProcess = ytdlp.exec(url, options);
+    const ytDlpProcess = ytdlp.exec(execUrl, options);
     
     let currentStage = 'Fetching metadata';
     const emitProgress = (data) => {

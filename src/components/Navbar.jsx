@@ -119,7 +119,7 @@ const Navbar = () => {
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="lg:hidden overflow-hidden bg-dark border-b border-white/10 backdrop-blur-xl absolute left-0 w-full shadow-2xl shadow-black/50"
+            className="lg:hidden rounded-4xl overflow-hidden bg-dark border-b border-white/10 backdrop-blur-xl absolute left-0 w-full shadow-2xl shadow-black/50"
           >
             <div className="px-4 pt-4 pb-6 space-y-2">
               {allLinks.map((link, index) => {
